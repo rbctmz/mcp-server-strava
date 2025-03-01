@@ -45,7 +45,6 @@ Alternatively, you can test it with the MCP Inspector:
 mcp dev server.py
 ```
 
-
 ### Настройка переменных окружения
 
 Создайте файл `.env` в корневой директории проекта:
@@ -75,6 +74,35 @@ STRAVA_TOKEN_EXPIRES_AT=время_истечения_токена
 
 ```bash
 python src/server.py
+```
+
+## Развертывание
+
+### Клонирование репозитория
+
+```bash
+git clone https://github.com/rbctmz/mcp-server-strava.git
+cd mcp-server-strava
+```
+
+### Установка зависимостей
+
+```bash
+# Использование pip
+pip install -r requirements-dev.txt
+
+# Или использование uv
+uv pip install -r requirements-dev.txt
+```
+
+### Запуск сервера
+
+```bash
+# Установка в Claude Desktop
+mcp install src/server.py
+
+# Или запуск в режиме разработки
+mcp dev src/server.py
 ```
 
 ## Анализ тренировочной нагрузки
