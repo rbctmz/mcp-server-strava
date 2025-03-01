@@ -1,0 +1,40 @@
+# python-sdk
+python-sdk/
+
+# Логи
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+env/
+venv/
+.venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Тесты
+.coverage
+coverage.xml
+.pytest_cache/
+htmlcov/
+
+# Сборка
+dist/
+build/
+*.egg-info/
+
+# UV
+.uv/
+.uvenv/
+
+# Локальные настройки
+.DS_Store
+*.swp
+*.swo

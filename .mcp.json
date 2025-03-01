@@ -1,0 +1,16 @@
+{
+    "name": "Strava Integration",
+    "version": "1.0.0",
+    "command": "/Users/gregkisel/.local/bin/uv",
+    "args": [
+        "run",
+        "--with",
+        "mcp[cli]>=1.0.0",
+        "mcp",
+        "run",
+        "src/server.py"
+    ],
+    "env": {
+        "PYTHONPATH": "/Users/gregkisel/mcp-server-strava"
+    }
+}
