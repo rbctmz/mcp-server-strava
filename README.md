@@ -33,18 +33,6 @@ pip install mcp-sdk requests python-dotenv
 uv add "mcp[cli]"
 ```
 
-You can install this server in Claude Desktop and interact with it right away by running:
-
-```bash
-mcp install server.py
-```
-
-Alternatively, you can test it with the MCP Inspector:
-
-```bash
-mcp dev server.py
-```
-
 ### Настройка переменных окружения
 
 Создайте файл `.env` в корневой директории проекта:
