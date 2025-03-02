@@ -43,7 +43,7 @@ uv pip install -e ".[dev]"
 uv add "mcp[cli]"
 ```
 
-## 🔧 Настройка 
+## 🔧 Настройка
 
 ### Настройка Strava API
 
@@ -51,22 +51,25 @@ uv add "mcp[cli]"
 2. Создайте приложение:
    - Application Name: MCP Strava Integration
    - Category: Training Analysis
-   - Website: http://localhost
+   - Website: <http://localhost>
    - Authorization Callback Domain: localhost
 
 ### Настройка окружения
 
 1. Создайте файл с переменными окружения:
+
    ```bash
    cp .env-template .env
    ```
 
 2. Получите токены доступа:
+
    ```bash
    python scripts/auth.py
    ```
 
 3. Проверьте настройку:
+
    ```bash
    mcp dev src/server.py
    curl -X GET "http://localhost:8000/activities"
@@ -148,6 +151,7 @@ summary = analyze_training_load(activities)
    - Rate limiting: 100 запросов/15 мин
 
 2. Настройка секретов:
+
    ```bash
    # В GitHub: Settings → Secrets → Actions
    STRAVA_CLIENT_ID=<client_id>
@@ -161,11 +165,13 @@ summary = analyze_training_load(activities)
 2. Установите зависимости: `uv pip install -e ".[dev]"`
 3. Создайте ветку: `git checkout -b feature/name`
 4. Проверьте изменения:
+
    ```bash
    ruff format .
    ruff check .
    pytest --cov=src
    ```
+
 5. Создайте Pull Request
 
 ## 📫 Поддержка
