@@ -17,30 +17,33 @@ jobs:
         with:
           python-version: '3.10'
           
-      - name: Get uv cache dir
-        id: get-uv-cache
-        run: echo "UV_CACHE_DIR=$(uv cache dir)" >> $GITHUB_OUTPUT
-        
-      - name: Cache uv dependencies
+      - name: Get cache paths
+        id: cache-paths
+        run: |
+          echo "UV_CACHE=$(uv cache dir)" >> $GITHUB_OUTPUT
+          echo "VENV_PATH=$PWD/.venv" >> $GITHUB_OUTPUT
+          
+      - name: Cache dependencies
         uses: actions/cache@v4
         with:
-          path: ${{ steps.get-uv-cache.outputs.UV_CACHE_DIR }}
-          key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
+          path: |
+            ${{ steps.cache-paths.outputs.UV_CACHE }}
+            ${{ steps.cache-paths.outputs.VENV_PATH }}
+          key: ${{ runner.os }}-deps-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-uv-
+            ${{ runner.os }}-deps-
       
-      - name: Setup venv and tools
+      - name: Install uv and setup venv
         run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
           uv venv
-          source .venv/bin/activate
-          uv pip install ruff pytest pytest-cov
           echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
           
-      - name: Install package
+      - name: Install dependencies
         run: |
-          source .venv/bin/activate
           uv pip install -e ".[dev]"
+          uv pip install ruff pytest pytest-cov
           
       - name: Run linting
         run: |
