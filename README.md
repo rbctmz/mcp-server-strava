@@ -1,6 +1,7 @@
 # Интеграция Strava API с Model Context Protocol (MCP) SDK
 
 ![CI](https://github.com/rbctmz/mcp-server-strava/actions/workflows/ci.yml/badge.svg)
+![Codecov](https://codecov.io/gh/rbctmz/mcp-server-strava/branch/main/graph/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)
