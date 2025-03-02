@@ -71,7 +71,7 @@ class StravaAuth:
             return response
         except requests.exceptions.RequestException as e:
             logging.error(f"Request error: {e}")
-            raise RuntimeError("API request failed") from e
+            raise RuntimeError(str(e)) from e
 
     def refresh_access_token(self) -> str:
         """Обновление токена доступа"""
@@ -105,7 +105,7 @@ os.makedirs(log_dir, exist_ok=True)
 # Настройка логирования
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(name)s - %(levellevelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(),
         logging.FileHandler(os.path.join(log_dir, "strava_api.log")),
@@ -125,6 +125,7 @@ strava_auth = StravaAuth()
 @mcp.resource("strava://activities")
 def get_recent_activities() -> List[Dict]:
     """Получить последние активности из Strava"""
+
     limit = 10
     logger.info(f"Запрашиваем последние {limit} активностей")
 
@@ -142,7 +143,7 @@ def get_recent_activities() -> List[Dict]:
 
     except Exception as e:
         logger.error(f"Ошибка API Strava: {e}")
-        raise RuntimeError("Ошибка получения активностей") from e
+        raise RuntimeError(f"Ошибка получения активностей: {e}") from e
 
 
 @mcp.resource("strava://activities/{activity_id}")
@@ -357,7 +358,10 @@ def get_activity_recommendations() -> Dict:
                 "distance": f"{analysis['total_distance']:.1f} км",
                 "time": f"{analysis['total_time']:.1f} ч",
                 "distribution": {
-                    activity: {"count": count, "percent": f"{(count/total_activities*100):.0f}%"}
+                    activity: {
+                        "count": count,
+                        "percent": f"{(count / total_activities * 100):.0f}%",
+                    }
                     for activity, count in activity_types.items()
                 },
             },
