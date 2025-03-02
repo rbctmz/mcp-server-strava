@@ -119,31 +119,55 @@ strava_auth = StravaAuth()
 @mcp.resource("strava://activities")
 def get_recent_activities() -> List[Dict]:
     """Получить последние активности из Strava"""
-    limit = 10  # Default value moved into function
+    limit = 10
     logger.info(f"Запрашиваем последние {limit} активностей")
+    
     try:
         access_token = strava_auth.get_access_token()
-        response = requests.get(
+        response = strava_auth.make_request(
+            "GET",
             "https://www.strava.com/api/v3/athlete/activities",
-            headers={"Authorization": f"Bearer {access_token}"},
-            params={"per_page": limit}
+            headers={
+                "Authorization": f"Bearer {access_token}"
+            },
+            params={
+                "per_page": limit
+            }
         )
-        response.raise_for_status()
         activities = response.json()
         logger.info(f"Получено {len(activities)} активностей")
         return activities
-    except requests.exceptions.RequestException as e:
+        
+    except Exception as e:
         logger.error(f"Ошибка API Strava: {e}")
         raise RuntimeError(f"Ошибка получения активностей: {e}")
 
 @mcp.resource("strava://activities/{activity_id}")
 def get_activity(activity_id: str) -> dict:
-    """Получить детали конкретной активности"""
-    response = requests.get(
-        f"https://www.strava.com/api/v3/activities/{activity_id}",
-        headers={"Authorization": f"Bearer {os.getenv('STRAVA_ACCESS_TOKEN')}"}
-    )
-    return response.json()
+    """Получить детали конкретной активности
+    
+    Args:
+        activity_id: ID активности
+    Returns:
+        dict: Данные активности
+    """
+    try:
+        access_token = strava_auth.get_access_token()
+        # Используем strava_auth.make_request вместо прямого вызова requests
+        response = strava_auth.make_request(
+            "GET",
+            f"https://www.strava.com/api/v3/activities/{activity_id}",
+            headers={
+                "Authorization": f"Bearer {access_token}"
+            }
+        )
+        activity = response.json()
+        logger.info(f"Получена активность {activity_id}: {activity.get('type')}")
+        return activity
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения активности {activity_id}: {e}")
+        raise RuntimeError(f"Не удалось получить активность: {str(e)}")
 
 @mcp.tool()
 def analyze_activity(activity_id: Union[str, int]) -> dict:
@@ -321,23 +345,45 @@ def get_activity_recommendations() -> Dict:
             "- Регулярно анализировать прогресс"
         )
     
-    return {
-        "analysis": analysis,
-        "recommendations": recommendations,
+    # Форматируем вывод для лучшей читаемости
+    result = {
+        "analysis": {
+            "activities": {
+                "total": analysis["activities_count"],
+                "distance": f"{analysis['total_distance']:.1f} км",
+                "time": f"{analysis['total_time']:.1f} ч",
+                "distribution": {
+                    activity: {
+                        "count": count,
+                        "percent": f"{(count/total_activities*100):.0f}%"
+                    }
+                    for activity, count in activity_types.items()
+                }
+            },
+            "intensity": {
+                "zones": {
+                    "easy": f"{easy_percent:.0f}%" if total_zone_activities > 0 else "0%",
+                    "medium": f"{medium_percent:.0f}%" if total_zone_activities > 0 else "0%",
+                    "hard": f"{hard_percent:.0f}%" if total_zone_activities > 0 else "0%"
+                },
+                "status": "Сбалансировано" if 60 <= easy_percent <= 80 else "Требует корректировки"
+            }
+        },
+        "recommendations": [
+            {
+                "category": recommendation.split('\n')[0],
+                "details": recommendation.split('\n')[1:]
+            }
+            for recommendation in recommendations
+        ],
         "summary": {
-            "weekly_stats": {
+            "status": "✅ Тренировки сбалансированы" if not recommendations else "⚠️ Есть рекомендации",
+            "weekly": {
+                "activities": total_activities,
                 "distance": f"{weekly_distance:.1f} км",
-                "time": f"{weekly_hours:.1f} ч",
-                "activities": total_activities
-            },
-            "intensity_distribution": {
-                "easy": f"{easy_percent:.0f}%" if total_zone_activities > 0 else "0%",
-                "medium": f"{medium_percent:.0f}%" if total_zone_activities > 0 else "0%",
-                "hard": f"{hard_percent:.0f}%" if total_zone_activities > 0 else "0%"
-            },
-            "activity_distribution": {
-                activity: f"{(count/total_activities*100):.0f}%"
-                for activity, count in activity_types.items()
+                "time": f"{weekly_hours:.1f} ч"
             }
         }
     }
+    
+    return result

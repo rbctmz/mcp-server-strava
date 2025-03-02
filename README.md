@@ -4,125 +4,223 @@
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)
+[![License](https://img.shields.io/github/license/Model-Context-Protocol/mcp-strava-integration)]
 
 Это приложение демонстрирует интеграцию Strava API с Model Context Protocol SDK для анализа тренировок и получения рекомендаций на основе данных Strava.
 
-## Функциональность
+## Быстрый старт
 
-Проект позволяет:
-1. Получать последние активности из Strava
-2. Анализировать отдельные тренировки
-3. Получать общую статистику тренировочной нагрузки
-4. Формировать рекомендации на основе анализа тренировок
-
-## Установка
-
-### Предварительные требования
-
-- Python 3.10 или выше
-- Доступ к API Strava (Client ID, Client Secret, Refresh Token)
-- MCP SDK
-
-### Установка зависимостей
+1. Установите Python 3.10+
+2. Создайте приложение на [Strava API](https://www.strava.com/settings/api)
+3. Установите зависимости:
 
 ```bash
-pip install mcp-sdk requests python-dotenv
+# Рекомендуемый способ (использует uv для быстрой установки)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv pip install -r requirements-dev.txt
+
+# Альтернативный способ (стандартный pip)
+pip install -r requirements.txt
 ```
 
-```zsh
+4. Установите MCP SDK:
+
+```bash
 uv add "mcp[cli]"
 ```
 
-### Настройка переменных окружения
-
-Создайте файл `.env` в корневой директории проекта:
-
-```
-STRAVA_CLIENT_ID=ваш_client_id
-STRAVA_CLIENT_SECRET=ваш_client_secret
-STRAVA_REFRESH_TOKEN=ваш_refresh_token
-STRAVA_ACCESS_TOKEN=начальный_access_token
-STRAVA_TOKEN_EXPIRES_AT=время_истечения_токена
-```
-
-## Основной функционал
-
-### Ресурсы MCP
-
-- `strava://activities` - Получение списка последних активностей
-- `strava://activities/{activity_id}` - Получение информации о конкретной активности
-
-### Инструменты MCP
-
-- `analyze_activity` - Анализ отдельной активности (тип, дистанция, время, темп, нагрузка)
-- `analyze_training_load` - Анализ общей тренировочной нагрузки (статистика по типам активностей, зонам ЧСС)
-- `get_activity_recommendations` - Получение рекомендаций по тренировкам
-
-## Запуск
+Альтернативно:
 
 ```bash
-python src/server.py
+pip install mcp
 ```
 
-## Развертывание
-
-### Клонирование репозитория
+5. Настройте переменные окружения в `.env`:
 
 ```bash
-git clone https://github.com/rbctmz/mcp-server-strava.git
-cd mcp-server-strava
+# Скопируйте шаблон
+cp .env-template .env
+
+# Отредактируйте .env, добавив ваши данные из Strava API
 ```
 
-### Установка зависимостей
+## Настройка Strava API
+
+1. Перейдите на [страницу настроек API](https://www.strava.com/settings/api)
+2. Создайте новое приложение:
+   - Application Name: MCP Strava Integration
+   - Website: [http://localhost](http://localhost)
+   - Authorization Callback Domain: localhost
+3. После создания вы получите:
+   - Client ID
+   - Client Secret
+4. Для получения Refresh Token:
+   ```bash
+   # Запустите скрипт авторизации
+   python scripts/auth.py
+   ```
+
+## Авторизация в Strava API
+
+### 1. Создание приложения
+
+1. Перейдите на [страницу настроек Strava API](https://www.strava.com/settings/api)
+2. Создайте новое приложение:
+   - Application Name: MCP Strava Integration
+   - Category: Training Analysis
+   - Website: http://localhost
+   - Authorization Callback Domain: localhost
+   - Application Description: Интеграция с Claude Desktop для анализа тренировок
+3. После создания сохраните:
+   - Client ID
+   - Client Secret
+
+### 2. Получение токенов доступа
 
 ```bash
-# Использование pip
-pip install -r requirements-dev.txt
+# Создайте файл с переменными окружения из шаблона
+cp .env-template .env
 
-# Или использование uv
-uv pip install -r requirements-dev.txt
+# Добавьте в .env полученные Client ID и Secret
+STRAVA_CLIENT_ID=your_client_id
+STRAVA_CLIENT_SECRET=your_client_secret
+
+# Запустите скрипт авторизации
+python scripts/auth.py
 ```
 
-### Запуск сервера
+При запуске скрипта:
+1. Откроется браузер со страницей авторизации Strava
+2. Подтвердите доступ к вашим данным
+3. После подтверждения токены будут автоматически сохранены в `.env`:
+   - `STRAVA_ACCESS_TOKEN`
+   - `STRAVA_REFRESH_TOKEN`
+   - `STRAVA_TOKEN_EXPIRES_AT`
+
+### 3. Проверка авторизации
 
 ```bash
-# Установка в Claude Desktop
+# Запустите сервер в режиме разработки
+mcp dev src/server.py
+
+# Проверьте доступ к API
+curl -X GET "http://localhost:8000/activities" \
+  -H "Authorization: Bearer ${STRAVA_ACCESS_TOKEN}"
+```
+
+### 4. Обновление токенов
+
+- Токены обновляются автоматически при истечении срока действия
+- Для ручного обновления запустите:
+```bash
+python scripts/auth.py --refresh
+```
+
+### Безопасность
+
+- Храните `.env` файл локально, не добавляйте его в git
+- Используйте разные приложения для разработки и продакшена
+- Регулярно проверяйте [настройки доступа](https://www.strava.com/settings/apps)
+- Используйте rate limiting для соблюдения ограничений API
+
+## Примеры использования
+
+### Получение последних активностей
+
+```python
+from mcp import ClientSession
+
+async with ClientSession() as session:
+    # Получить список активностей
+    activities = await session.read_resource("strava://activities")
+    
+    # Получить конкретную активность
+    activity = await session.read_resource("strava://activities/12345678")
+```
+
+### Анализ тренировки
+
+```python
+# Через MCP
+result = analyze_activity(activity_id="12345678")
+"""
+Результат:
+{
+    "type": "Run",
+    "distance": 5000,
+    "moving_time": 1800,
+    "analysis": {
+        "pace": 5.5,  # мин/км
+        "effort": "Средняя"
+    }
+}
+"""
+```
+
+## Запуск MCP сервера
+
+### Установка сервера MCP
+
+```bash
 mcp install src/server.py
+```
 
-# Или запуск в режиме разработки
+### Запуск в режиме разработки
+
+```bash
 mcp dev src/server.py
 ```
 
-## Анализ тренировочной нагрузки
+## Разработка
 
-Система анализирует следующие параметры:
-- Количество активностей
-- Общую дистанцию (в километрах)
-- Общее время тренировок (в часах)
-- Распределение по типам активностей
-- Распределение по зонам ЧСС:
-  - Легкая (ЧСС < 120)
-  - Средняя (ЧСС 120-150)
-  - Высокая (ЧСС > 150)
+### Запуск тестов
 
-## CI/CD
+```bash
+# Все тесты
+pytest
+
+# С отчетом о покрытии
+pytest --cov=src
+
+# Конкретный тест
+pytest tests/test_server.py -k test_analyze_activity
+```
+
+### CI/CD
 
 Проект использует GitHub Actions для:
-- Проверки форматирования кода (ruff)
-- Запуска автоматических тестов (pytest)
-- Проверки на разных версиях Python
 
-Для работы CI необходимо настроить секреты в настройках репозитория:
-- `STRAVA_CLIENT_ID`
-- `STRAVA_CLIENT_SECRET`
-- `STRAVA_REFRESH_TOKEN`
+1. Линтинга (ruff):
+   - Проверка форматирования
+   - Статический анализ
+2. Тестирования (pytest):
+   - Unit-тесты
+   - Интеграционные тесты
+   - Отчет о покрытии
+
+Настройка CI:
+
+1. Перейдите в Settings → Secrets → Actions
+2. Добавьте секреты:
+   - `STRAVA_CLIENT_ID`
+   - `STRAVA_CLIENT_SECRET`
+   - `STRAVA_REFRESH_TOKEN`
 
 ## Безопасность
 
-- Автоматическое обновление access token при истечении
-- Безопасное хранение учетных данных через переменные окружения
-- Не включайте файл `.env` в систему контроля версий
+- Файл `.env` автоматически добавлен в `.gitignore`
+- Токены обновляются автоматически
+- Rate limiting: 100 запросов/15 мин, 1000 запросов/день
+- Логи не содержат чувствительных данных
+
+## Вопросы и поддержка
+
+- GitHub Issues: [создать issue](https://github.com/rbctmz/mcp-server-strava/issues)
+- Telegram: [@](https://t.me/greg_kisel)greg\_kisel
+
+
 
 ## Лицензия
 
 [MIT](LICENSE)
+
