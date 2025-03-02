@@ -7,6 +7,25 @@
 
 Это приложение демонстрирует интеграцию Strava API с Model Context Protocol SDK для анализа тренировок и получения рекомендаций на основе данных Strava.
 
+## Оглавление
+
+- [Требования](#требования)
+- [Быстрый старт](#быстрый-старт)
+- [Настройка Strava API](#настройка-strava-api)
+- [Примеры использования](#примеры-использования)
+- [Разработка](#разработка)
+- [CI/CD](#cicd)
+- [Безопасность](#безопасность)
+- [Вопросы и поддержка](#вопросы-и-поддержка)
+- [Лицензия](#лицензия)
+
+## Требования
+
+- Python 3.10+
+- [Claude Desktop](https://claude.ai/desktop)
+- [Strava](https://www.strava.com) аккаунт
+- [uv](https://github.com/astral-sh/uv) (опционально)
+
 ## Быстрый старт
 
 1. Установите Python 3.10+
@@ -48,24 +67,6 @@ cp .env-template .env
 1. Перейдите на [страницу настроек API](https://www.strava.com/settings/api)
 2. Создайте новое приложение:
    - Application Name: MCP Strava Integration
-   - Website: [http://localhost](http://localhost)
-   - Authorization Callback Domain: localhost
-3. После создания вы получите:
-   - Client ID
-   - Client Secret
-4. Для получения Refresh Token:
-   ```bash
-   # Запустите скрипт авторизации
-   python scripts/auth.py
-   ```
-
-## Авторизация в Strava API
-
-### 1. Создание приложения
-
-1. Перейдите на [страницу настроек Strava API](https://www.strava.com/settings/api)
-2. Создайте новое приложение:
-   - Application Name: MCP Strava Integration
    - Category: Training Analysis
    - Website: http://localhost
    - Authorization Callback Domain: localhost
@@ -73,6 +74,11 @@ cp .env-template .env
 3. После создания сохраните:
    - Client ID
    - Client Secret
+4. Для получения Refresh Token:
+   
+   ```bash
+   python scripts/auth.py
+   ```
 
 ### 2. Получение токенов доступа
 
@@ -89,6 +95,7 @@ python scripts/auth.py
 ```
 
 При запуске скрипта:
+
 1. Откроется браузер со страницей авторизации Strava
 2. Подтвердите доступ к вашим данным
 3. После подтверждения токены будут автоматически сохранены в `.env`:
@@ -111,6 +118,7 @@ curl -X GET "http://localhost:8000/activities" \
 
 - Токены обновляются автоматически при истечении срока действия
 - Для ручного обновления запустите:
+
 ```bash
 python scripts/auth.py --refresh
 ```
@@ -197,6 +205,48 @@ pytest tests/test_server.py -k test_analyze_activity
    - Интеграционные тесты
    - Отчет о покрытии
 
+#### Настройка секретов на GitHub
+
+1. Перейдите в `Settings → Secrets → Actions` вашего репозитория
+2. Для каждого секрета:
+   - Нажмите `New repository secret`
+   - Добавьте реальные значения из вашего `.env` файла:
+
+     ```
+     Name: STRAVA_CLIENT_ID
+     Value: <ваш реальный Client ID из Strava>
+     ```
+
+   - Повторите для `STRAVA_CLIENT_SECRET` и `STRAVA_REFRESH_TOKEN`
+
+⚠️ **Важно**:
+
+- В GitHub Secrets добавляйте реальные значения
+- В документации и коде используйте только плейсхолдеры
+- Никогда не коммитьте реальные значения в репозиторий
+- Секреты в GitHub хранятся в зашифрованном виде
+- Значения секретов нельзя просмотреть после сохранения
+
+#### Секреты для CI/CD
+
+В GitHub Actions используются три ключевых секрета:
+
+1. `STRAVA_CLIENT_ID` и `STRAVA_CLIENT_SECRET`:
+   - Идентификаторы вашего приложения в Strava
+   - Необходимы для OAuth 2.0 аутентификации
+   - Используются при обновлении токенов
+
+2. `STRAVA_REFRESH_TOKEN`:
+   - Долгоживущий токен для обновления доступа
+   - Не имеет срока действия
+   - Используется для автоматического получения `access_token`
+
+⚠️ **Примечание**: `STRAVA_ACCESS_TOKEN` не добавляется в секреты, так как:
+
+- Имеет ограниченный срок действия (6 часов)
+- Автоматически обновляется через `refresh_token`
+- Генерируется при запуске тестов
+
 Настройка CI:
 
 1. Перейдите в Settings → Secrets → Actions
@@ -215,11 +265,8 @@ pytest tests/test_server.py -k test_analyze_activity
 ## Вопросы и поддержка
 
 - GitHub Issues: [создать issue](https://github.com/rbctmz/mcp-server-strava/issues)
-- Telegram: [@](https://t.me/greg_kisel)greg\_kisel
-
-
+- Telegram: [@greg_kisel](https://t.me/greg_kisel)
 
 ## Лицензия
 
 [MIT](LICENSE)
-
