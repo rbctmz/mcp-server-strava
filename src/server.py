@@ -1,15 +1,16 @@
-from mcp.server.fastmcp import FastMCP
+import logging
 import os
-from dotenv import load_dotenv
-import requests
-from datetime import datetime
-import logging
-import sys
-from typing import Optional, Dict, List, Union
 import time
-from datetime import datetime, timedelta
-from typing import Optional, Dict, List
-import logging
+from datetime import datetime
+from typing import Dict, List, Optional, Union
+
+import requests
+from dotenv import load_dotenv
+from mcp.server.fastmcp import FastMCP
+
+# Настройка логирования
+logger = logging.getLogger(__name__)
+
 
 class RateLimiter:
     def __init__(self):
@@ -21,18 +22,22 @@ class RateLimiter:
     def can_make_request(self) -> bool:
         """Проверка возможности сделать запрос"""
         now = time.time()
-        
+
         # Очистка старых запросов
         self.requests_15min = [t for t in self.requests_15min if now - t < 900]  # 15 минут
         self.requests_daily = [t for t in self.requests_daily if now - t < 86400]  # 24 часа
-        
-        return len(self.requests_15min) < self.limit_15min and len(self.requests_daily) < self.limit_daily
+
+        return (
+            len(self.requests_15min) < self.limit_15min
+            and len(self.requests_daily) < self.limit_daily
+        )
 
     def add_request(self):
         """Регистрация нового запроса"""
         now = time.time()
         self.requests_15min.append(now)
         self.requests_daily.append(now)
+
 
 class StravaAuth:
     def __init__(self):
@@ -58,7 +63,7 @@ class StravaAuth:
             wait_time = 60  # ждем минуту при достижении лимита
             logging.warning(f"Rate limit reached, waiting {wait_time} seconds")
             time.sleep(wait_time)
-            
+
         try:
             response = requests.request(method, url, **kwargs)
             self.rate_limiter.add_request()
@@ -66,7 +71,7 @@ class StravaAuth:
             return response
         except requests.exceptions.RequestException as e:
             logging.error(f"Request error: {e}")
-            raise RuntimeError(f"API request failed: {e}")
+            raise RuntimeError("API request failed") from e
 
     def refresh_access_token(self) -> str:
         """Обновление токена доступа"""
@@ -78,8 +83,8 @@ class StravaAuth:
                     "client_id": self.client_id,
                     "client_secret": self.client_secret,
                     "refresh_token": self.refresh_token,
-                    "grant_type": "refresh_token"
-                }
+                    "grant_type": "refresh_token",
+                },
             )
             response.raise_for_status()
             data = response.json()
@@ -92,6 +97,7 @@ class StravaAuth:
             logger.error(f"Ошибка обновления токена: {e}")
             raise
 
+
 # Создаем директорию для логов если её нет
 log_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
 os.makedirs(log_dir, exist_ok=True)
@@ -99,13 +105,12 @@ os.makedirs(log_dir, exist_ok=True)
 # Настройка логирования
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(os.path.join(log_dir, 'strava_api.log'))
-    ]
+        logging.FileHandler(os.path.join(log_dir, "strava_api.log")),
+    ],
 )
-logger = logging.getLogger(__name__)
 
 # Загружаем конфигурацию
 load_dotenv()
@@ -116,36 +121,34 @@ mcp = FastMCP("Strava Integration")
 # Создаем экземпляр авторизации
 strava_auth = StravaAuth()
 
+
 @mcp.resource("strava://activities")
 def get_recent_activities() -> List[Dict]:
     """Получить последние активности из Strava"""
     limit = 10
     logger.info(f"Запрашиваем последние {limit} активностей")
-    
+
     try:
         access_token = strava_auth.get_access_token()
         response = strava_auth.make_request(
             "GET",
             "https://www.strava.com/api/v3/athlete/activities",
-            headers={
-                "Authorization": f"Bearer {access_token}"
-            },
-            params={
-                "per_page": limit
-            }
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={"per_page": limit},
         )
         activities = response.json()
         logger.info(f"Получено {len(activities)} активностей")
         return activities
-        
+
     except Exception as e:
         logger.error(f"Ошибка API Strava: {e}")
-        raise RuntimeError(f"Ошибка получения активностей: {e}")
+        raise RuntimeError("Ошибка получения активностей") from e
+
 
 @mcp.resource("strava://activities/{activity_id}")
 def get_activity(activity_id: str) -> dict:
     """Получить детали конкретной активности
-    
+
     Args:
         activity_id: ID активности
     Returns:
@@ -157,22 +160,21 @@ def get_activity(activity_id: str) -> dict:
         response = strava_auth.make_request(
             "GET",
             f"https://www.strava.com/api/v3/activities/{activity_id}",
-            headers={
-                "Authorization": f"Bearer {access_token}"
-            }
+            headers={"Authorization": f"Bearer {access_token}"},
         )
         activity = response.json()
         logger.info(f"Получена активность {activity_id}: {activity.get('type')}")
         return activity
-        
+
     except Exception as e:
         logger.error(f"Ошибка получения активности {activity_id}: {e}")
-        raise RuntimeError(f"Не удалось получить активность: {str(e)}")
+        raise RuntimeError("Не удалось получить активность") from e
+
 
 @mcp.tool()
 def analyze_activity(activity_id: Union[str, int]) -> dict:
     """Анализ активности из Strava
-    
+
     Args:
         activity_id: ID активности (строка или число)
     Returns:
@@ -180,23 +182,19 @@ def analyze_activity(activity_id: Union[str, int]) -> dict:
     """
     # Преобразуем activity_id в строку
     activity_id = str(activity_id)
-    
+
     try:
         activity = get_activity(activity_id)
         return {
             "type": activity.get("type"),
             "distance": activity.get("distance"),
             "moving_time": activity.get("moving_time"),
-            "analysis": {
-                "pace": _calculate_pace(activity),
-                "effort": _calculate_effort(activity)
-            }
+            "analysis": {"pace": _calculate_pace(activity), "effort": _calculate_effort(activity)},
         }
     except Exception as e:
         logger.error(f"Ошибка анализа активности {activity_id}: {e}")
-        return {
-            "error": f"Не удалось проанализировать активность: {str(e)}"
-        }
+        return {"error": f"Не удалось проанализировать активность: {str(e)}"}
+
 
 def _calculate_pace(activity: dict) -> float:
     """Расчет темпа активности"""
@@ -211,14 +209,19 @@ def _calculate_pace(activity: dict) -> float:
     except (TypeError, ZeroDivisionError):
         return 0
 
+
 def _calculate_effort(activity: dict) -> str:
     """Оценка нагрузки"""
-    if "average_heartrate" in activity:
-        hr = activity["average_heartrate"]
-        if hr < 120: return "Легкая"
-        elif hr < 150: return "Средняя"
-        else: return "Высокая"
-    return "Неизвестно"
+    if "average_heartrate" not in activity:
+        return "Неизвестно"
+
+    hr = activity["average_heartrate"]
+    if hr < 120:
+        return "Легкая"
+    if hr < 150:
+        return "Средняя"
+    return "Высокая"
+
 
 @mcp.tool()
 def analyze_training_load(activities: List[Dict]) -> Dict:
@@ -229,24 +232,25 @@ def analyze_training_load(activities: List[Dict]) -> Dict:
         "total_time": 0,
         "activities_by_type": {},
         "heart_rate_zones": {
-            "easy": 0,    # ЧСС < 120
+            "easy": 0,  # ЧСС < 120
             "medium": 0,  # ЧСС 120-150
-            "hard": 0     # ЧСС > 150
-        }
+            "hard": 0,  # ЧСС > 150
+        },
     }
-    
+
     for activity in activities:
-        # Подсчет по типам активностей
         activity_type = activity.get("type")
+
+        # Обновляем счетчик типа активности
         if activity_type not in summary["activities_by_type"]:
             summary["activities_by_type"][activity_type] = 0
         summary["activities_by_type"][activity_type] += 1
-        
-        # Общая дистанция и время
+
+        # Суммируем дистанцию и время
         summary["total_distance"] += activity.get("distance", 0)
         summary["total_time"] += activity.get("moving_time", 0)
-        
-        # Анализ зон ЧСС
+
+        # Анализируем зоны ЧСС
         hr = activity.get("average_heartrate", 0)
         if hr:
             if hr < 120:
@@ -256,25 +260,25 @@ def analyze_training_load(activities: List[Dict]) -> Dict:
             else:
                 summary["heart_rate_zones"]["hard"] += 1
 
-    # Конвертируем метры в километры
-    summary["total_distance"] = round(summary["total_distance"] / 1000, 2)
-    # Конвертируем секунды в часы
-    summary["total_time"] = round(summary["total_time"] / 3600, 2)
+    # Конвертируем единицы измерения
+    summary["total_distance"] = round(summary["total_distance"] / 1000, 2)  # в километры
+    summary["total_time"] = round(summary["total_time"] / 3600, 2)  # в часы
 
     return summary
+
 
 @mcp.tool()
 def get_activity_recommendations() -> Dict:
     """Получить рекомендации по тренировкам на основе анализа последних активностей"""
     activities = get_recent_activities()
     analysis = analyze_training_load(activities)
-    
+
     recommendations = []
-    
+
     # Анализ разнообразия тренировок
     activity_types = analysis["activities_by_type"]
     total_activities = analysis["activities_count"]
-    
+
     # Анализ интенсивности по зонам
     zones = analysis["heart_rate_zones"]
     total_zone_activities = sum(zones.values())
@@ -282,7 +286,7 @@ def get_activity_recommendations() -> Dict:
         easy_percent = (zones["easy"] / total_zone_activities) * 100
         medium_percent = (zones["medium"] / total_zone_activities) * 100
         hard_percent = (zones["hard"] / total_zone_activities) * 100
-        
+
         # Проверка распределения интенсивности
         if easy_percent < 70:
             recommendations.append(
@@ -292,7 +296,7 @@ def get_activity_recommendations() -> Dict:
                 "- Больше базовых тренировок в низких пульсовых зонах\n"
                 "- Использовать контроль пульса во время тренировок"
             )
-        
+
         if medium_percent > 40:
             recommendations.append(
                 f"Большой процент тренировок в средней зоне ({medium_percent:.0f}%). "
@@ -300,7 +304,7 @@ def get_activity_recommendations() -> Dict:
                 "- Четко разделять легкие и интенсивные тренировки\n"
                 "- Избегать тренировок в 'серой зоне'"
             )
-    
+
     # Анализ объемов по видам спорта
     if "Run" in activity_types:
         run_volume = sum(a.get("distance", 0) for a in activities if a.get("type") == "Run") / 1000
@@ -312,11 +316,11 @@ def get_activity_recommendations() -> Dict:
                 "- Включить легкие восстановительные пробежки\n"
                 "- Постепенно довести объем до 30-40 км в неделю"
             )
-    
+
     # Анализ общего объема
     weekly_distance = analysis["total_distance"]
     weekly_hours = analysis["total_time"]
-    
+
     if weekly_hours < 5:
         recommendations.append(
             f"Общий объем ({weekly_hours:.1f} ч) можно увеличить.\n"
@@ -325,7 +329,7 @@ def get_activity_recommendations() -> Dict:
             "- Включить кросс-тренировки для разнообразия\n"
             "- Следить за самочувствием при увеличении нагрузок"
         )
-    
+
     # Рекомендации по восстановлению
     if total_zone_activities > 5:
         recommendations.append(
@@ -334,7 +338,7 @@ def get_activity_recommendations() -> Dict:
             "- Планировать легкие дни после интенсивных тренировок\n"
             "- Следить за питанием и гидратацией"
         )
-    
+
     # Если всё сбалансировано
     if not recommendations:
         recommendations.append(
@@ -344,7 +348,7 @@ def get_activity_recommendations() -> Dict:
             "- Вести дневник тренировок\n"
             "- Регулярно анализировать прогресс"
         )
-    
+
     # Форматируем вывод для лучшей читаемости
     result = {
         "analysis": {
@@ -353,37 +357,33 @@ def get_activity_recommendations() -> Dict:
                 "distance": f"{analysis['total_distance']:.1f} км",
                 "time": f"{analysis['total_time']:.1f} ч",
                 "distribution": {
-                    activity: {
-                        "count": count,
-                        "percent": f"{(count/total_activities*100):.0f}%"
-                    }
+                    activity: {"count": count, "percent": f"{(count/total_activities*100):.0f}%"}
                     for activity, count in activity_types.items()
-                }
+                },
             },
             "intensity": {
                 "zones": {
                     "easy": f"{easy_percent:.0f}%" if total_zone_activities > 0 else "0%",
                     "medium": f"{medium_percent:.0f}%" if total_zone_activities > 0 else "0%",
-                    "hard": f"{hard_percent:.0f}%" if total_zone_activities > 0 else "0%"
+                    "hard": f"{hard_percent:.0f}%" if total_zone_activities > 0 else "0%",
                 },
-                "status": "Сбалансировано" if 60 <= easy_percent <= 80 else "Требует корректировки"
-            }
+                "status": "Сбалансировано" if 60 <= easy_percent <= 80 else "Требует корректировки",
+            },
         },
         "recommendations": [
-            {
-                "category": recommendation.split('\n')[0],
-                "details": recommendation.split('\n')[1:]
-            }
+            {"category": recommendation.split("\n")[0], "details": recommendation.split("\n")[1:]}
             for recommendation in recommendations
         ],
         "summary": {
-            "status": "✅ Тренировки сбалансированы" if not recommendations else "⚠️ Есть рекомендации",
+            "status": "✅ Тренировки сбалансированы"
+            if not recommendations
+            else "⚠️ Есть рекомендации",
             "weekly": {
                 "activities": total_activities,
                 "distance": f"{weekly_distance:.1f} км",
-                "time": f"{weekly_hours:.1f} ч"
-            }
-        }
+                "time": f"{weekly_hours:.1f} ч",
+            },
+        },
     }
-    
+
     return result
