@@ -4,10 +4,6 @@
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)
-<<<<<<< HEAD
-![License](https://img.shields.io/github/license/Model-Context-Protocol/mcp-strava-integration)
-=======
->>>>>>> f540116 (Исправлен бейдж лицензии в README.md)
 
 Это приложение демонстрирует интеграцию Strava API с Model Context Protocol SDK для анализа тренировок и получения рекомендаций на основе данных Strava.
 
