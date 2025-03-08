@@ -83,6 +83,7 @@ uv add "mcp[cli]"
 |-----|----------|----------|
 | Ресурс | `strava://activities` | Список активностей |
 | Ресурс | `strava://activities/{id}` | Детали активности |
+| Ресурс | `strava://athlete/zones` | Тренировочные зоны |
 | Инструмент | `analyze_activity(activity_id)` | Анализ тренировки |
 | Инструмент | `analyze_training_load(activities)` | Анализ нагрузки |
 | Инструмент | `get_activity_recommendations()` | Рекомендации |
@@ -125,14 +126,41 @@ summary = analyze_training_load(activities)
     }
 }
 """
+
+# Получение тренировочных зон
+async with ClientSession() as session:
+    zones = await session.read_resource("strava://athlete/zones")
+    """
+    {
+        "heart_rate": {
+            "custom_zones": true,
+            "zones": [
+                {"min": 0, "max": 120, "name": "Z1 - Recovery"},
+                {"min": 120, "max": 150, "name": "Z2 - Endurance"},
+                {"min": 150, "max": 170, "name": "Z3 - Tempo"},
+                {"min": 170, "max": 185, "name": "Z4 - Threshold"},
+                {"min": 185, "max": -1, "name": "Z5 - Anaerobic"}
+            ]
+        },
+        "power": {
+            "zones": [
+                {"min": 0, "max": 180},
+                {"min": 181, "max": 250},
+                {"min": 251, "max": 300},
+                {"min": 301, "max": 350},
+                {"min": 351, "max": -1}
+            ]
+        }
+    }
+    """
 ```
 
 ## 🛠 Разработка
 
 ### CI/CD и безопасность
 
-- ![Coverage](https://img.shields.io/badge/coverage-69%25-yellow.svg)
-- ![Tests](https://img.shields.io/badge/tests-12%20passed-green.svg)
+- ![Coverage](https://img.shields.io/badge/coverage-72%25-yellow.svg)
+- ![Tests](https://img.shields.io/badge/tests-15%20passed-green.svg)
 - ![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)
 
 #### Проверки в GitHub Actions
