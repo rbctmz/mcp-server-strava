@@ -391,3 +391,51 @@ def get_activity_recommendations() -> Dict:
     }
 
     return result
+
+
+@mcp.resource("strava://athlete/zones")
+def get_athlete_zones() -> Dict:
+    """Получить тренировочные зоны атлета
+
+    Returns:
+        Dict: Зоны частоты пульса и мощности
+    """
+    try:
+        access_token = strava_auth.get_access_token()
+        response = strava_auth.make_request(
+            "GET",
+            "https://www.strava.com/api/v3/athlete/zones",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        zones = response.json()
+        logger.info("Получены тренировочные зоны атлета")
+        return {
+            "heart_rate": {
+                "custom_zones": zones.get("heart_rate", {}).get("custom_zones", False),
+                "zones": [
+                    {
+                        "min": zone.get("min", 0),
+                        "max": zone.get("max", -1),
+                        "name": f"Z{i+1} - {_get_zone_name(i)}"
+                    }
+                    for i, zone in enumerate(zones.get("heart_rate", {}).get("zones", []))
+                ]
+            },
+            "power": {
+                "zones": zones.get("power", {}).get("zones", [])
+            }
+        }
+    except Exception as e:
+        logger.error(f"Ошибка получения зон: {e}")
+        raise RuntimeError("Не удалось получить тренировочные зоны") from e
+
+def _get_zone_name(index: int) -> str:
+    """Получить название зоны по индексу"""
+    zone_names = {
+        0: "Recovery",     # Восстановление
+        1: "Endurance",    # Выносливость
+        2: "Tempo",        # Темповая
+        3: "Threshold",    # Пороговая
+        4: "Anaerobic"     # Анаэробная
+    }
+    return zone_names.get(index, "Unknown")

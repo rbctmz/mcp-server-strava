@@ -10,6 +10,8 @@ from src.server import (
     analyze_activity,
     analyze_training_load,
     get_recent_activities,
+    get_athlete_zones,
+    _get_zone_name,
 )
 
 
@@ -51,6 +53,32 @@ def strava_auth(mock_env_vars):
     """Фикстура для создания StravaAuth с тестовыми переменными"""
     with patch.dict(os.environ, mock_env_vars):
         return StravaAuth()
+
+
+@pytest.fixture
+def mock_zones_response():
+    """Фикстура с тестовыми зонами"""
+    return {
+        "heart_rate": {
+            "custom_zones": True,
+            "zones": [
+                {"min": 0, "max": 120},
+                {"min": 120, "max": 150},
+                {"min": 150, "max": 170},
+                {"min": 170, "max": 185},
+                {"min": 185, "max": -1}
+            ]
+        },
+        "power": {
+            "zones": [
+                {"min": 0, "max": 180},
+                {"min": 181, "max": 250},
+                {"min": 251, "max": 300},
+                {"min": 301, "max": 350},
+                {"min": 351, "max": -1}
+            ]
+        }
+    }
 
 
 def test_strava_auth_initialization(mock_env_vars):
@@ -213,3 +241,52 @@ def test_analyze_activity_id_types(activity_id):
         
         result = analyze_activity(activity_id)
         assert result["type"] == "Run"
+
+
+def test_get_athlete_zones(mock_zones_response):
+    """Тест получения тренировочных зон"""
+    with patch.object(StravaAuth, "get_access_token") as mock_token:
+        mock_token.return_value = "test_token"
+        
+        with patch("src.server.strava_auth.make_request") as mock_request:
+            mock_response = Mock()
+            mock_response.json.return_value = mock_zones_response  # Используем фикстуру как параметр
+            mock_request.return_value = mock_response
+
+            zones = get_athlete_zones()
+            
+            # Проверяем структуру ответа
+            assert "heart_rate" in zones
+            assert "power" in zones
+            
+            # Проверяем зоны ЧСС
+            hr_zones = zones["heart_rate"]["zones"]
+            assert len(hr_zones) == 5
+            assert hr_zones[0]["name"] == "Z1 - Recovery"
+            assert hr_zones[1]["name"] == "Z2 - Endurance"
+            
+            # Проверяем зоны мощности
+            power_zones = zones["power"]["zones"]
+            assert len(power_zones) == 5
+            assert power_zones[0]["min"] == 0
+            assert power_zones[0]["max"] == 180
+
+
+def test_get_athlete_zones_error_handling():
+    """Тест обработки ошибок при получении зон"""
+    with patch("src.server.strava_auth.make_request") as mock_request:
+        mock_request.side_effect = RuntimeError("API error")
+
+        with pytest.raises(RuntimeError) as exc_info:
+            get_athlete_zones()
+        assert "Не удалось получить тренировочные зоны" in str(exc_info.value)
+
+
+def test_zone_name_mapping():
+    """Тест маппинга названий зон"""
+    assert _get_zone_name(0) == "Recovery"
+    assert _get_zone_name(1) == "Endurance"
+    assert _get_zone_name(2) == "Tempo"
+    assert _get_zone_name(3) == "Threshold"
+    assert _get_zone_name(4) == "Anaerobic"
+    assert _get_zone_name(99) == "Unknown"  # Тест неизвестной зоны
