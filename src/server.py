@@ -76,6 +76,7 @@ class StravaAuth:
     def refresh_access_token(self) -> str:
         """Обновление токена доступа"""
         try:
+            logger.debug(f"Отправка запроса на обновление токена. Client ID: {self.client_id}")
             response = self.make_request(
                 "POST",
                 "https://www.strava.com/oauth/token",
@@ -86,15 +87,26 @@ class StravaAuth:
                     "grant_type": "refresh_token",
                 },
             )
-            response.raise_for_status()
             data = response.json()
+            logger.debug("Получен ответ от Strava API")
+            
+            # Проверяем наличие необходимых полей
+            if "access_token" not in data:
+                raise ValueError("Отсутствует access_token в ответе")
+                
+            # Обновляем токены
             self.access_token = data["access_token"]
+            self.refresh_token = data.get("refresh_token", self.refresh_token)
             self.token_expires_at = data["expires_at"]
             self._cached_token = self.access_token
             self._last_refresh = datetime.now().timestamp()
+            
+            logger.info("Токены успешно обновлены")
             return self._cached_token
+            
         except Exception as e:
             logger.error(f"Ошибка обновления токена: {e}")
+            logger.debug(f"Client ID: {self.client_id}, Refresh Token: {self.refresh_token[:10]}...")
             raise
 
 
@@ -105,7 +117,7 @@ os.makedirs(log_dir, exist_ok=True)
 # Настройка логирования
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levellevelname)s - %(message)s",
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(),
         logging.FileHandler(os.path.join(log_dir, "strava_api.log")),
@@ -120,6 +132,12 @@ mcp = FastMCP("Strava Integration")
 
 # Создаем экземпляр авторизации
 strava_auth = StravaAuth()
+
+# Проверяем токены при старте
+try:
+    strava_auth.get_access_token()
+except Exception as e:
+    logger.error(f"Ошибка при проверке токенов: {e}")
 
 
 @mcp.resource("strava://activities")
@@ -171,7 +189,97 @@ def get_activity(activity_id: str) -> dict:
         logger.error(f"Ошибка получения активности {activity_id}: {e}")
         raise RuntimeError("Не удалось получить активность") from e
 
+@mcp.resource("strava://athlete/zones")
+def get_athlete_zones() -> Dict:
+    """Получить тренировочные зоны атлета
 
+    Returns:
+        Dict: Зоны частоты пульса и мощности
+    """
+    try:
+        access_token = strava_auth.get_access_token()
+        response = strava_auth.make_request(
+            "GET",
+            "https://www.strava.com/api/v3/athlete/zones",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        zones = response.json()
+        logger.info("Получены тренировочные зоны атлета")
+        return {
+            "heart_rate": {
+                "custom_zones": zones.get("heart_rate", {}).get("custom_zones", False),
+                "zones": [
+                    {
+                        "min": zone.get("min", 0),
+                        "max": zone.get("max", -1),
+                        "name": f"Z{i+1} - {_get_zone_name(i)}"
+                    }
+                    for i, zone in enumerate(zones.get("heart_rate", {}).get("zones", []))
+                ]
+            },
+            "power": {
+                "zones": zones.get("power", {}).get("zones", [])
+            }
+        }
+    except Exception as e:
+        logger.error(f"Ошибка получения зон: {e}")
+        raise RuntimeError("Не удалось получить тренировочные зоны") from e
+
+def _get_zone_name(index: int) -> str:
+    """Получить название зоны по индексу"""
+    zone_names = {
+        0: "Recovery",     # Восстановление
+        1: "Endurance",    # Выносливость
+        2: "Tempo",        # Темповая
+        3: "Threshold",    # Пороговая
+        4: "Anaerobic"     # Анаэробная
+    }
+    return zone_names.get(index, "Unknown")
+
+@mcp.resource("strava:///athlete/clubs")
+def get_athlete_stats() -> Dict:
+    """Получить клубы атлета
+
+    Returns:
+        Dict: Клубы атлета
+    """
+    try:
+        access_token = strava_auth.get_access_token()
+        response = strava_auth.make_request(
+            "GET",
+            "https://www.strava.com/api/v3/athlete/clubs",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        clubs = response.json()
+        logger.info(f"Получены клубы атлета: {len(clubs)}")
+        return clubs
+    except Exception as e:
+        logger.error(f"Ошибка получения клубов: {e}")
+        raise RuntimeError("Не удалось получить клубы атлета") from e        
+
+@mcp.resource("strava://gear/{gear_id}")
+def get_gear(gear_id: str) -> Dict:
+    """Получить информацию о снаряжении
+
+    Args:
+        gear_id: ID снаряжения
+    Returns:
+        Dict: Информация о снаряжении
+    """
+    try:
+        access_token = strava_auth.get_access_token()
+        response = strava_auth.make_request(
+            "GET",
+            f"https://www.strava.com/api/v3/gear/{gear_id}",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        gear = response.json()
+        logger.info(f"Получено снаряжение {gear_id}: {gear.get('name')}")
+        return gear
+    except Exception as e:
+        logger.error(f"Ошибка получения снаряжения {gear_id}: {e}")
+        raise RuntimeError("Не удалось получить снаряжение") from e
+        
 @mcp.tool()
 def analyze_activity(activity_id: Union[str, int]) -> dict:
     """Анализ активности из Strava
@@ -392,50 +500,3 @@ def get_activity_recommendations() -> Dict:
 
     return result
 
-
-@mcp.resource("strava://athlete/zones")
-def get_athlete_zones() -> Dict:
-    """Получить тренировочные зоны атлета
-
-    Returns:
-        Dict: Зоны частоты пульса и мощности
-    """
-    try:
-        access_token = strava_auth.get_access_token()
-        response = strava_auth.make_request(
-            "GET",
-            "https://www.strava.com/api/v3/athlete/zones",
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-        zones = response.json()
-        logger.info("Получены тренировочные зоны атлета")
-        return {
-            "heart_rate": {
-                "custom_zones": zones.get("heart_rate", {}).get("custom_zones", False),
-                "zones": [
-                    {
-                        "min": zone.get("min", 0),
-                        "max": zone.get("max", -1),
-                        "name": f"Z{i+1} - {_get_zone_name(i)}"
-                    }
-                    for i, zone in enumerate(zones.get("heart_rate", {}).get("zones", []))
-                ]
-            },
-            "power": {
-                "zones": zones.get("power", {}).get("zones", [])
-            }
-        }
-    except Exception as e:
-        logger.error(f"Ошибка получения зон: {e}")
-        raise RuntimeError("Не удалось получить тренировочные зоны") from e
-
-def _get_zone_name(index: int) -> str:
-    """Получить название зоны по индексу"""
-    zone_names = {
-        0: "Recovery",     # Восстановление
-        1: "Endurance",    # Выносливость
-        2: "Tempo",        # Темповая
-        3: "Threshold",    # Пороговая
-        4: "Anaerobic"     # Анаэробная
-    }
-    return zone_names.get(index, "Unknown")
