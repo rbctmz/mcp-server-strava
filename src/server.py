@@ -11,7 +11,6 @@ from mcp.server.fastmcp import FastMCP
 # Настройка логирования
 logger = logging.getLogger(__name__)
 
-
 class RateLimiter:
     def __init__(self):
         self.requests_15min: List[float] = []
@@ -109,7 +108,6 @@ class StravaAuth:
             logger.debug(f"Client ID: {self.client_id}, Refresh Token: {self.refresh_token[:10]}...")
             raise
 
-
 # Создаем директорию для логов если её нет
 log_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
 os.makedirs(log_dir, exist_ok=True)
@@ -139,7 +137,6 @@ try:
 except Exception as e:
     logger.error(f"Ошибка при проверке токенов: {e}")
 
-
 @mcp.resource("strava://activities")
 def get_recent_activities() -> List[Dict]:
     """Получить последние активности из Strava"""
@@ -162,7 +159,6 @@ def get_recent_activities() -> List[Dict]:
     except Exception as e:
         logger.error(f"Ошибка API Strava: {e}")
         raise RuntimeError(f"Ошибка получения активностей: {e}") from e
-
 
 @mcp.resource("strava://activities/{activity_id}")
 def get_activity(activity_id: str) -> dict:
@@ -304,7 +300,6 @@ def analyze_activity(activity_id: Union[str, int]) -> dict:
         logger.error(f"Ошибка анализа активности {activity_id}: {e}")
         return {"error": f"Не удалось проанализировать активность: {str(e)}"}
 
-
 def _calculate_pace(activity: dict) -> float:
     """Расчет темпа активности"""
     try:
@@ -318,7 +313,6 @@ def _calculate_pace(activity: dict) -> float:
     except (TypeError, ZeroDivisionError):
         return 0
 
-
 def _calculate_effort(activity: dict) -> str:
     """Оценка нагрузки"""
     if "average_heartrate" not in activity:
@@ -330,7 +324,6 @@ def _calculate_effort(activity: dict) -> str:
     if hr < 150:
         return "Средняя"
     return "Высокая"
-
 
 @mcp.tool()
 def analyze_training_load(activities: List[Dict]) -> Dict:
@@ -374,7 +367,6 @@ def analyze_training_load(activities: List[Dict]) -> Dict:
     summary["total_time"] = round(summary["total_time"] / 3600, 2)  # в часы
 
     return summary
-
 
 @mcp.tool()
 def get_activity_recommendations() -> Dict:
@@ -499,4 +491,3 @@ def get_activity_recommendations() -> Dict:
     }
 
     return result
-

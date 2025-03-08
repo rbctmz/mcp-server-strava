@@ -84,6 +84,8 @@ uv add "mcp[cli]"
 | Ресурс | `strava://activities` | Список активностей |
 | Ресурс | `strava://activities/{id}` | Детали активности |
 | Ресурс | `strava://athlete/zones` | Тренировочные зоны |
+| Ресурс | `strava://athlete/clubs` | Клубы атлета |
+| Ресурс | `strava://gear/{gear_id}` | Информация о снаряжении |
 | Инструмент | `analyze_activity(activity_id)` | Анализ тренировки |
 | Инструмент | `analyze_training_load(activities)` | Анализ нагрузки |
 | Инструмент | `get_activity_recommendations()` | Рекомендации |
