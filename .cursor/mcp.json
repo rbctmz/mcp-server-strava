@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "strava": {
+      "command": "uv",
+      "args": [
+          "run",
+          "--directory",
+          "/Users/gregkisel/mcp-server-strava",
+          "mcp",
+          "run",
+          "src/server.py"
+      ],
+      "env": {
+          "PYTHONPATH": "/Users/gregkisel/mcp-server-strava"
+      }
+    }
+  }
+}
