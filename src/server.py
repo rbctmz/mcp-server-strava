@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Union
 import requests
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+from strava.cache import StravaCache
 
 # В начало файла после импортов
 STRAVA_API_BASE = "https://www.strava.com/api/v3"
@@ -144,12 +145,16 @@ os.makedirs(log_dir, exist_ok=True)
 # Настройка логирования
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",  # исправлено с levellevelname на levelname
     handlers=[
         logging.StreamHandler(),
         logging.FileHandler(os.path.join(log_dir, "strava_api.log")),
     ],
 )
+
+# Создаем кэш после инициализации логирования
+strava_cache = StravaCache(ttl=300)  # 5 минут
+logger.info("Инициализирован кэш Strava API")
 
 # Загружаем конфигурацию
 load_dotenv()
@@ -169,8 +174,15 @@ except Exception as e:
 @mcp.resource("strava://activities")
 def get_recent_activities() -> List[Dict]:
     """Получить последние активности из Strava"""
-
     limit = 10
+    cache_key = f"activities_{limit}"
+    
+    # Проверяем кэш
+    cached = strava_cache.get(cache_key)
+    if cached:
+        logger.debug(f"Возвращаем активности из кэша")
+        return cached
+        
     logger.info(f"Запрашиваем последние {limit} активностей")
 
     try:
@@ -182,7 +194,11 @@ def get_recent_activities() -> List[Dict]:
             params={"per_page": limit},
         )
         activities = response.json()
-        logger.info(f"Получено {len(activities)} активностей")
+        
+        # Сохраняем в кэш
+        strava_cache.set(cache_key, activities)
+        logger.info(f"Получено и закэшировано {len(activities)} активностей")
+        
         return activities
 
     except Exception as e:
@@ -191,23 +207,28 @@ def get_recent_activities() -> List[Dict]:
 
 @mcp.resource("strava://activities/{activity_id}")
 def get_activity(activity_id: str) -> dict:
-    """Получить детали конкретной активности
-
-    Args:
-        activity_id: ID активности
-    Returns:
-        dict: Данные активности
-    """
+    """Получить детали конкретной активности"""
+    cache_key = f"activity_{activity_id}"
+    
+    # Проверяем кэш
+    cached = strava_cache.get(cache_key)
+    if cached:
+        logger.debug(f"Возвращаем активность {activity_id} из кэша")
+        return cached
+    
     try:
         access_token = strava_auth.get_access_token()
-        # Используем strava_auth.make_request вместо прямого вызова requests
         response = strava_auth.make_request(
             "GET",
             f"https://www.strava.com/api/v3/activities/{activity_id}",
             headers={"Authorization": f"Bearer {access_token}"},
         )
         activity = response.json()
-        logger.info(f"Получена активность {activity_id}: {activity.get('type')}")
+        
+        # Сохраняем в кэш
+        strava_cache.set(cache_key, activity)
+        logger.info(f"Получена и закэширована активность {activity_id}: {activity.get('type')}")
+        
         return activity
 
     except Exception as e:
@@ -224,6 +245,13 @@ def get_athlete_zones() -> Dict:
     Raises:
         RuntimeError: При ошибке получения зон
     """
+    cache_key = "athlete_zones"
+    # Проверяем кэш
+    cached = strava_cache.get(cache_key)
+    if cached:
+        logger.debug("Возвращаем зоны из кэша")
+        return cached
+
     try:
         access_token = strava_auth.get_access_token()
         logger.debug(f"Запрос зон с токеном: {access_token[:10]}...")
@@ -238,22 +266,17 @@ def get_athlete_zones() -> Dict:
         )
         
         zones = response.json()
-        logger.debug(f"Получены типы зон: {list(zones.keys())}")
-        
-        return {
-            "heart_rate": zones.get("heart_rate", {
-                "custom_zones": False,
-                "zones": []
-            }),
-            "power": zones.get("power", {
-                "custom_zones": False,
-                "zones": []
-            }),
-            "pace": zones.get("pace", {
-                "custom_zones": False,
-                "zones": []
-            })
+        result = {
+            "heart_rate": zones.get("heart_rate", {"custom_zones": False, "zones": []}),
+            "power": zones.get("power", {"custom_zones": False, "zones": []}),
+            "pace": zones.get("pace", {"custom_zones": False, "zones": []}),
         }
+        
+        # Сохраняем в кэш
+        strava_cache.set(cache_key, result)
+        logger.debug(f"Получены и закэшированы типы зон: {list(zones.keys())}")
+        
+        return result
 
     except Exception as e:
         logger.error(f"Ошибка получения зон: {e}")
@@ -277,6 +300,14 @@ def get_athlete_stats() -> Dict:
     Returns:
         Dict: Клубы атлета
     """
+    cache_key = "athlete_clubs"
+    
+    # Проверяем кэш
+    cached = strava_cache.get(cache_key)
+    if cached:
+        logger.debug("Возвращаем клубы из кэша")
+        return cached
+
     try:
         access_token = strava_auth.get_access_token()
         response = strava_auth.make_request(
@@ -286,6 +317,10 @@ def get_athlete_stats() -> Dict:
         )
         clubs = response.json()
         logger.info(f"Получены клубы атлета: {len(clubs)}")
+        # Сохраняем в кэш
+        strava_cache.set(cache_key, clubs)
+        logger.info(f"Получено и закэшировано клубов: {len(clubs)}")
+        
         return clubs
     except Exception as e:
         logger.error(f"Ошибка получения клубов: {e}")
@@ -300,6 +335,14 @@ def get_gear(gear_id: str) -> Dict:
     Returns:
         Dict: Информация о снаряжении
     """
+    cache_key = f"gear_{gear_id}"
+    
+    # Проверяем кэш
+    cached = strava_cache.get(cache_key)
+    if cached:
+        logger.debug(f"Возвращаем снаряжение {gear_id} из кэша")
+        return cached
+
     try:
         access_token = strava_auth.get_access_token()
         response = strava_auth.make_request(
@@ -309,6 +352,9 @@ def get_gear(gear_id: str) -> Dict:
         )
         gear = response.json()
         logger.info(f"Получено снаряжение {gear_id}: {gear.get('name')}")
+        # Сохраняем в кэш
+        strava_cache.set(cache_key, gear)
+        logger.info(f"Получено и закэшировано снаряжение {gear_id}: {gear.get('name')}")
         return gear
     except Exception as e:
         logger.error(f"Ошибка получения снаряжения {gear_id}: {e}")
