@@ -103,13 +103,9 @@ def main():
 
     server = HTTPServer(("localhost", 8000), AuthHandler)
 
-    auth_url = (
-        "https://www.strava.com/oauth/authorize"
-        f"?client_id={client_id}"
-        "&response_type=code"
-        "&redirect_uri=http://localhost:8000"
-        "&scope=activity:read_all"
-    )
+    SCOPE = "read,read_all,profile:read_all,activity:read_all"
+    redirect_uri = "http://localhost:8000"
+    auth_url = f"https://www.strava.com/oauth/authorize?client_id={client_id}&response_type=code&redirect_uri={redirect_uri}&scope={SCOPE}"
 
     logger.info("Открываем браузер для авторизации в Strava...")
     webbrowser.open(auth_url)

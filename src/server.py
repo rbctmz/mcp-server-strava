@@ -8,6 +8,16 @@ import requests
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
+# В начало файла после импортов
+STRAVA_API_BASE = "https://www.strava.com/api/v3"
+STRAVA_AUTH_URL = "https://www.strava.com/oauth/token"
+
+# Лимиты API
+STRAVA_RATE_LIMITS = {
+    "15_MIN": 100,
+    "DAILY": 1000
+}
+
 # Настройка логирования
 logger = logging.getLogger(__name__)
 
@@ -37,6 +47,23 @@ class RateLimiter:
         self.requests_15min.append(now)
         self.requests_daily.append(now)
 
+class StravaApiError(Exception):
+    """Ошибки Strava API"""
+    def __init__(self, message: str, status_code: int = None):
+        self.status_code = status_code
+        super().__init__(message)
+
+def _handle_strava_error(e: requests.exceptions.RequestException) -> None:
+    """Обработка ошибок Strava API"""
+    if e.response is not None:
+        status_code = e.response.status_code
+        if status_code == 401:
+            raise StravaApiError("Ошибка авторизации. Проверьте токены.", status_code)
+        elif status_code == 429:
+            raise StravaApiError("Превышен лимит запросов.", status_code)
+        else:
+            raise StravaApiError(f"Ошибка Strava API: {e}", status_code)
+    raise StravaApiError(f"Сетевая ошибка: {e}")
 
 class StravaAuth:
     def __init__(self):
@@ -58,6 +85,9 @@ class StravaAuth:
 
     def make_request(self, method: str, url: str, **kwargs) -> requests.Response:
         """Выполнение запроса с учетом rate limiting"""
+        if not url.startswith("https://"):
+            url = f"{STRAVA_API_BASE}{url}"
+            
         if not self.rate_limiter.can_make_request():
             wait_time = 60  # ждем минуту при достижении лимита
             logging.warning(f"Rate limit reached, waiting {wait_time} seconds")
@@ -69,8 +99,7 @@ class StravaAuth:
             response.raise_for_status()
             return response
         except requests.exceptions.RequestException as e:
-            logging.error(f"Request error: {e}")
-            raise RuntimeError(str(e)) from e
+            _handle_strava_error(e)
 
     def refresh_access_token(self) -> str:
         """Обновление токена доступа"""
@@ -188,35 +217,44 @@ def get_activity(activity_id: str) -> dict:
 @mcp.resource("strava://athlete/zones")
 def get_athlete_zones() -> Dict:
     """Получить тренировочные зоны атлета
-
+    
     Returns:
-        Dict: Зоны частоты пульса и мощности
+        Dict: Словарь с зонами для каждого типа (пульс, мощность, темп)
+        
+    Raises:
+        RuntimeError: При ошибке получения зон
     """
     try:
         access_token = strava_auth.get_access_token()
+        logger.debug(f"Запрос зон с токеном: {access_token[:10]}...")
+        
         response = strava_auth.make_request(
             "GET",
-            "https://www.strava.com/api/v3/athlete/zones",
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-        zones = response.json()
-        logger.info("Получены тренировочные зоны атлета")
-        return {
-            "heart_rate": {
-                "custom_zones": zones.get("heart_rate", {}).get("custom_zones", False),
-                "zones": [
-                    {
-                        "min": zone.get("min", 0),
-                        "max": zone.get("max", -1),
-                        "name": f"Z{i+1} - {_get_zone_name(i)}"
-                    }
-                    for i, zone in enumerate(zones.get("heart_rate", {}).get("zones", []))
-                ]
-            },
-            "power": {
-                "zones": zones.get("power", {}).get("zones", [])
+            "/athlete/zones",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
             }
+        )
+        
+        zones = response.json()
+        logger.debug(f"Получены типы зон: {list(zones.keys())}")
+        
+        return {
+            "heart_rate": zones.get("heart_rate", {
+                "custom_zones": False,
+                "zones": []
+            }),
+            "power": zones.get("power", {
+                "custom_zones": False,
+                "zones": []
+            }),
+            "pace": zones.get("pace", {
+                "custom_zones": False,
+                "zones": []
+            })
         }
+
     except Exception as e:
         logger.error(f"Ошибка получения зон: {e}")
         raise RuntimeError("Не удалось получить тренировочные зоны") from e
