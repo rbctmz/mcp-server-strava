@@ -8,6 +8,11 @@ from typing import Optional
 from .rate_limiter import RateLimiter
 logger = logging.getLogger(__name__)
 
+def global_handle_strava_error(error: Exception):  # Renamed function
+    """Обработка ошибок Strava API на уровне модуля"""
+    logger.error(f"Strava API Error: {error}")
+    raise RuntimeError(f"Strava API Error: {error}") from error
+
 STRAVA_API_BASE = "https://www.strava.com/api/v3"
 STRAVA_AUTH_URL = "https://www.strava.com/oauth/token"
 
@@ -22,7 +27,37 @@ class StravaAuth:
         self._last_refresh: Optional[float] = None
         self.rate_limiter = RateLimiter()
 
-    
+    def handle_strava_error(self, error: Exception):
+        """Обработка ошибок Strava API"""
+        try:
+            if isinstance(error, requests.Response):
+                status_code = error.status_code
+                if status_code == 401:
+                    # Avoid recursive call by checking if we're already refreshing
+                    if not getattr(self, '_is_refreshing', False):
+                        self._is_refreshing = True
+                        try:
+                            self.refresh_access_token()
+                        finally:
+                            self._is_refreshing = False
+                        return  # Return after successful token refresh
+                    raise RuntimeError("Не удалось обновить токен")
+                elif status_code == 429:
+                    raise RuntimeError("Превышен лимит запросов к API")
+                else:
+                    raise RuntimeError(f"Ошибка Strava API: {error.text}")
+            elif isinstance(error, requests.exceptions.RequestException):
+                if error.response is not None:
+                    # Instead of recursive call, handle the response directly
+                    status_code = error.response.status_code
+                    raise RuntimeError(f"HTTP Error {status_code}: {error.response.text}")
+                else:
+                    raise RuntimeError(f"Сетевая ошибка: {str(error)}")
+            else:
+                raise RuntimeError(f"Непредвиденная ошибка: {str(error)}")
+        except Exception as e:
+            logger.error(f"Error handling Strava error: {e}")
+            raise
 
     def get_access_token(self) -> str:
         """Получение актуального токена с проверкой срока действия"""
@@ -31,31 +66,58 @@ class StravaAuth:
             return self.refresh_access_token()
         return self._cached_token
 
-    def make_request(self, method: str, url: str, **kwargs) -> requests.Response:
-        """Выполнение запроса с учетом rate limiting"""
-        if not url.startswith("https://"):
-            url = f"{STRAVA_API_BASE}{url}"
-            
-        if not self.rate_limiter.can_make_request():
-            wait_time = 60  # ждем минуту при достижении лимита
-            logging.warning(f"Rate limit reached, waiting {wait_time} seconds")
-            time.sleep(wait_time)
+    def make_authenticated_request(self, method: str, path: str, **kwargs) -> requests.Response:
+        """Make an authenticated request to Strava API with proper error handling"""
+        access_token = self.get_access_token()
+        
+        # Ensure we have authorization header
+        headers = kwargs.get("headers", {})
+        headers["Authorization"] = f"Bearer {access_token}"
+        kwargs["headers"] = headers
 
+        # Build full URL if needed
+        url = path if path.startswith("https://") else f"{STRAVA_API_BASE}{path}"
+        
         try:
             response = requests.request(method, url, **kwargs)
-            self.rate_limiter.add_request()
-            response.raise_for_status()
+            if not response.ok:
+                if response.status_code == 401:
+                    # Token expired, refresh and retry once
+                    self.refresh_access_token()
+                    # Update header with new token
+                    headers["Authorization"] = f"Bearer {self._cached_token}"
+                    response = requests.request(method, url, **kwargs)
+                    if not response.ok:
+                        raise RuntimeError(f"Request failed after token refresh: {response.text}")
+                else:
+                    raise RuntimeError(f"Strava API error: {response.text}")
             return response
         except requests.exceptions.RequestException as e:
-            _handle_strava_error(e)
+            raise RuntimeError(f"Network error: {str(e)}")
+    
+    def make_request(self, method: str, url: str, **kwargs) -> requests.Response:
+        """Выполнение запроса с учетом rate limiting"""
+        if not self.rate_limiter.can_make_request():
+            wait_time = 60
+            logging.warning(f"Rate limit reached, waiting {wait_time} seconds")
+            time.sleep(wait_time)
+            
+        try:
+            response = self.make_authenticated_request(method, url, **kwargs)
+            self.rate_limiter.add_request()
+            return response
+        except Exception as e:
+            logger.error(f"Request failed: {e}")
+            raise RuntimeError(f"Failed to make request: {str(e)}")
 
     def refresh_access_token(self) -> str:
         """Обновление токена доступа"""
         try:
             logger.debug(f"Отправка запроса на обновление токена. Client ID: {self.client_id}")
-            response = self.make_request(
-                "POST",
-                "https://www.strava.com/oauth/token",
+            
+            # Делаем прямой запрос без авторизации вместо использования make_request
+            response = requests.post(
+                STRAVA_AUTH_URL,
                 data={
                     "client_id": self.client_id,
                     "client_secret": self.client_secret,
@@ -63,6 +125,10 @@ class StravaAuth:
                     "grant_type": "refresh_token",
                 },
             )
+            
+            if not response.ok:
+                raise RuntimeError(f"Failed to refresh token: {response.text}")
+                
             data = response.json()
             logger.debug("Получен ответ от Strava API")
             
