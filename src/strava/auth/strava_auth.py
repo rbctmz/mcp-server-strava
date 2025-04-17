@@ -22,10 +22,18 @@ class StravaAuth:
         self.client_secret = os.getenv("STRAVA_CLIENT_SECRET")
         self.refresh_token = os.getenv("STRAVA_REFRESH_TOKEN")
         self.access_token = os.getenv("STRAVA_ACCESS_TOKEN")
+        # Timestamp when access token expires
         self.token_expires_at = float(os.getenv("STRAVA_TOKEN_EXPIRES_AT", "0"))
+        # In-memory cached token
         self._cached_token: Optional[str] = None
         self._last_refresh: Optional[float] = None
+        # Rate limiter for API calls
         self.rate_limiter = RateLimiter()
+        # Buffer time (seconds) before actual expiration to refresh token
+        self.token_expiry_buffer = 60  # seconds
+        # Retry settings for API requests
+        self._max_retries = 3
+        self._backoff_factor = 1  # base backoff in seconds
 
     def handle_strava_error(self, error: Exception):
         """Обработка ошибок Strava API"""
@@ -62,7 +70,8 @@ class StravaAuth:
     def get_access_token(self) -> str:
         """Получение актуального токена с проверкой срока действия"""
         now = datetime.now().timestamp()
-        if not self._cached_token or now >= self.token_expires_at - 300:  # 5 минут запас
+        # Refresh if no cached token or token is about to expire
+        if not self._cached_token or now >= self.token_expires_at - self.token_expiry_buffer:
             return self.refresh_access_token()
         return self._cached_token
 
@@ -96,19 +105,26 @@ class StravaAuth:
             raise RuntimeError(f"Network error: {str(e)}")
     
     def make_request(self, method: str, url: str, **kwargs) -> requests.Response:
-        """Выполнение запроса с учетом rate limiting"""
-        if not self.rate_limiter.can_make_request():
-            wait_time = 60
-            logging.warning(f"Rate limit reached, waiting {wait_time} seconds")
-            time.sleep(wait_time)
-            
-        try:
-            response = self.make_authenticated_request(method, url, **kwargs)
-            self.rate_limiter.add_request()
-            return response
-        except Exception as e:
-            logger.error(f"Request failed: {e}")
-            raise RuntimeError(f"Failed to make request: {str(e)}")
+        """Выполнение запроса с учетом rate limiting, retry и backoff"""
+        for attempt in range(1, self._max_retries + 1):
+            # Rate limiting check
+            if not self.rate_limiter.can_make_request():
+                wait_time = 60
+                logger.warning(f"Rate limit reached, waiting {wait_time} seconds")
+                time.sleep(wait_time)
+            try:
+                response = self.make_authenticated_request(method, url, **kwargs)
+                self.rate_limiter.add_request()
+                return response
+            except RuntimeError as e:
+                # Retry on transient errors
+                if attempt < self._max_retries:
+                    backoff = self._backoff_factor * (2 ** (attempt - 1))
+                    logger.warning(f"Request attempt {attempt} failed: {e}. Retrying in {backoff} seconds...")
+                    time.sleep(backoff)
+                    continue
+                logger.error(f"All {self._max_retries} request attempts failed: {e}")
+                raise
 
     def refresh_access_token(self) -> str:
         """Обновление токена доступа"""
@@ -116,7 +132,9 @@ class StravaAuth:
             logger.debug(f"Отправка запроса на обновление токена. Client ID: {self.client_id}")
             
             # Делаем прямой запрос без авторизации вместо использования make_request
-            response = requests.post(
+            # Используем requests.request для возможности патча в тестах
+            response = requests.request(
+                "POST",
                 STRAVA_AUTH_URL,
                 data={
                     "client_id": self.client_id,
@@ -146,7 +164,13 @@ class StravaAuth:
             logger.info("Токены успешно обновлены")
             return self._cached_token
             
-        except Exception as e:
+        except requests.exceptions.RequestException as e:
+            # Обработка ошибок сети при обновлении токена
             logger.error(f"Ошибка обновления токена: {e}")
-            logger.debug(f"Client ID: {self.client_id}, Refresh Token: {self.refresh_token[:10]}...")
+            raise RuntimeError(str(e))
+        except Exception as e:
+            # Другие ошибки при обновлении токена
+            logger.error(f"Ошибка обновления токена: {e}")
+            # Маскируем или удаляем вывод refresh token для безопасности
+            logger.debug(f"Client ID: {self.client_id}")
             raise

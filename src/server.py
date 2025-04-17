@@ -1,3 +1,7 @@
+import os
+import sys
+# Ensure project root is on PYTHONPATH so that 'src' package can be imported when running server script directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir)))
 import logging
 import os
 import time
@@ -5,14 +9,31 @@ from datetime import datetime
 from typing import Dict, List, Optional, Union
 
 import requests
+import json
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
-from strava.cache import StravaCache
-from strava.auth import StravaAuth, RateLimiter
-from strava.errors import handle_strava_error, StravaApiError
+from src.strava.cache import StravaCache
+from src.strava.auth import StravaAuth, RateLimiter
+from src.strava.errors import handle_strava_error, StravaApiError
+import functools
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
+
+# Декоратор для обработки ошибок ресурсов MCP
+def resource_error_handler(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except StravaApiError:
+            raise
+        except requests.exceptions.RequestException as e:
+            handle_strava_error(e)
+        except Exception as e:
+            logger.error(f"Ошибка выполнения ресурса {func.__name__}: {e}")
+            raise StravaApiError(str(e))
+    return wrapper
 
 # Создаем директорию для логов если её нет
 log_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
@@ -51,6 +72,7 @@ try:
 except Exception as e:
     logger.error(f"Ошибка при проверке токенов: {e}")
 
+@resource_error_handler
 @mcp.resource("strava://activities")
 def get_recent_activities() -> List[Dict]:
     """Получить активности из Strava API за последние 30 дней"""
@@ -61,10 +83,7 @@ def get_recent_activities() -> List[Dict]:
 
         params = {"before": before, "after": after, "page": 1, "per_page": 200}
 
-        cache_key = f"activities_{hash(frozenset(params.items()))}"
-        cached = strava_cache.get(cache_key)
-        if cached:
-            return cached
+        # Получение списка активностей без кэша
 
         access_token = strava_auth.get_access_token()
         response = strava_auth.make_request(
@@ -78,16 +97,19 @@ def get_recent_activities() -> List[Dict]:
             handle_strava_error(response)
             
         activities = response.json()
-        strava_cache.set(cache_key, activities)
         logger.info(f"Получено активностей: {len(activities)}")
         return activities
 
+    except StravaApiError:
+        # Пробросим ошибку StravaApiError для внешней обработки
+        raise
     except requests.exceptions.RequestException as e:
         handle_strava_error(e)
     except Exception as e:
         logger.error(f"Ошибка API Strava: {e}")
-        raise StravaApiError(str(e))
+        raise RuntimeError(str(e))
 
+@resource_error_handler
 @mcp.resource("strava://activities/{before}/{after}/{page}/{per_page}")
 def get_recent_activities_with_pagination(before: Optional[int] = None, after: Optional[int] = None, page: int = 1, per_page: int = 30) -> List[Dict]:
     """Получить активности из Strava API с поддержкой пагинации и фильтрации"""
@@ -98,10 +120,6 @@ def get_recent_activities_with_pagination(before: Optional[int] = None, after: O
         if after:
             params["after"] = after
 
-        cache_key = f"activities_{hash(frozenset(params.items()))}"
-        cached = strava_cache.get(cache_key)
-        if cached:
-            return cached
 
         access_token = strava_auth.get_access_token()
         response = strava_auth.make_request(
@@ -112,7 +130,6 @@ def get_recent_activities_with_pagination(before: Optional[int] = None, after: O
         )
 
         activities = response.json()
-        strava_cache.set(cache_key, activities)
         logger.info(f"Получено активностей: {len(activities)}")
         return activities
 
@@ -121,6 +138,7 @@ def get_recent_activities_with_pagination(before: Optional[int] = None, after: O
         raise RuntimeError(f"Ошибка получения активностей: {e}") from e
 
 
+@resource_error_handler
 @mcp.resource("strava://activities/{activity_id}")
 def get_activity(activity_id: str) -> dict:
     """Получить детали конкретной активности"""
@@ -154,6 +172,7 @@ def get_activity(activity_id: str) -> dict:
             raise StravaApiError(f"Ошибка API Strava: {str(e)}")
         raise RuntimeError(f"Не удалось получить активность: {str(e)}")
 
+@resource_error_handler
 @mcp.resource("strava://athlete/zones")
 def get_athlete_zones() -> Dict:
     """Получить тренировочные зоны атлета
@@ -164,16 +183,11 @@ def get_athlete_zones() -> Dict:
     Raises:
         RuntimeError: При ошибке получения зон
     """
-    cache_key = "athlete_zones"
-    # Проверяем кэш
-    cached = strava_cache.get(cache_key)
-    if cached:
-        logger.debug("Возвращаем зоны из кэша")
-        return cached
+    # Получение тренировочных зон без кэша
 
     try:
         access_token = strava_auth.get_access_token()
-        logger.debug(f"Запрос зон с токеном: {access_token[:10]}...")
+        logger.debug("Запрос зон атлета")
         
         response = strava_auth.make_request(
             "GET",
@@ -185,16 +199,24 @@ def get_athlete_zones() -> Dict:
         )
         
         zones = response.json()
+        # Обогащаем зоны пульса названиями
+        raw_hr = zones.get("heart_rate", {"custom_zones": False, "zones": []})
+        hr_zones = []
+        for idx, z in enumerate(raw_hr.get("zones", [])):
+            hr_zones.append({
+                "min": z.get("min"),
+                "max": z.get("max"),
+                "name": f"Z{idx+1} - {_get_zone_name(idx)}"
+            })
+        raw_hr["zones"] = hr_zones
+        # Прочие типы зон
+        raw_power = zones.get("power", {"custom_zones": False, "zones": []})
+        raw_pace = zones.get("pace", {"custom_zones": False, "zones": []})
         result = {
-            "heart_rate": zones.get("heart_rate", {"custom_zones": False, "zones": []}),
-            "power": zones.get("power", {"custom_zones": False, "zones": []}),
-            "pace": zones.get("pace", {"custom_zones": False, "zones": []}),
+            "heart_rate": raw_hr,
+            "power": raw_power,
+            "pace": raw_pace,
         }
-        
-        # Сохраняем в кэш
-        strava_cache.set(cache_key, result)
-        logger.debug(f"Получены и закэшированы типы зон: {list(zones.keys())}")
-        
         return result
 
     except Exception as e:
@@ -212,6 +234,7 @@ def _get_zone_name(index: int) -> str:
     }
     return zone_names.get(index, "Unknown")
 
+@resource_error_handler
 @mcp.resource("strava:///athlete/clubs")
 def get_athlete_stats() -> Dict:
     """Получить клубы атлета
@@ -245,6 +268,7 @@ def get_athlete_stats() -> Dict:
         logger.error(f"Ошибка получения клубов: {e}")
         raise RuntimeError("Не удалось получить клубы атлета") from e        
 
+@resource_error_handler
 @mcp.resource("strava://gear/{gear_id}")
 def get_gear(gear_id: str) -> Dict:
     """Получить информацию о снаряжении

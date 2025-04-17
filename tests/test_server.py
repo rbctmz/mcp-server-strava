@@ -217,7 +217,8 @@ def test_get_recent_activities_error_handling():
     with patch("src.server.strava_auth.make_request") as mock_request:
         mock_request.side_effect = RuntimeError("API error")
 
-        with pytest.raises(RuntimeError) as exc_info:
+        from src.strava.errors import StravaApiError
+        with pytest.raises(StravaApiError) as exc_info:
             get_recent_activities()
         assert "API error" in str(exc_info.value)
 
@@ -277,7 +278,8 @@ def test_get_athlete_zones_error_handling():
     with patch("src.server.strava_auth.make_request") as mock_request:
         mock_request.side_effect = RuntimeError("API error")
 
-        with pytest.raises(RuntimeError) as exc_info:
+        from src.strava.errors import StravaApiError
+        with pytest.raises(StravaApiError) as exc_info:
             get_athlete_zones()
         assert "Не удалось получить тренировочные зоны" in str(exc_info.value)
 

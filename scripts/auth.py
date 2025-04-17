@@ -40,8 +40,8 @@ ERROR_HTML = """
     <meta charset="utf-8">
     <title>Strava Authorization Error</title>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; padding: 40px; }
-        .error { color: red; }
+        body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; }}
+        .error {{ color: red; }}
     </style>
 </head>
 <body>
